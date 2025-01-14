@@ -45,15 +45,21 @@ const deepnote::Range ANIMATION_RATE_RANGE{deepnote::RangeLow(0.05f), deepnote::
 struct Deepnote_rack : Module {
 	enum ParamId {
 		DETUNE_PARAM,
-		CUTOFF_PARAM,
-		DIRECTION_PARAM,
+		TARGET_PARAM,
+		RATE_PARAM,
+		CP1_PARAM,
+		CP2_PARAM,
 		PARAMS_LEN
 	};
 	enum InputId {
+		DETUNE_CV_INPUT,
+		TARGET_CV_INPUT,
+		ROOT_CV_INPUT,
 		INPUTS_LEN
 	};
 	enum OutputId {
 		OUTPUT_OUTPUT,
+		GATE_OUTPUT,
 		OUTPUTS_LEN
 	};
 	enum LightId {
@@ -65,11 +71,16 @@ struct Deepnote_rack : Module {
 		config(PARAMS_LEN, INPUTS_LEN, OUTPUTS_LEN, LIGHTS_LEN);
 
 		configParam(DETUNE_PARAM, 0.f, 1.f, 0.5f, "detune", " Hz");
-		configParam(CUTOFF_PARAM, 500.f, 15000.f, 10000.0f, "cutoff", " Hz");
-		
-		configSwitch(DIRECTION_PARAM, 0.f, 1.f, 0.f, "direction", std::vector<std::string>{"start", "target"});
-		
+		configParam(TARGET_PARAM, 0.f, 1.f, 0.f, "");
+		configParam(RATE_PARAM, 0.f, 1.f, 0.f, "");
+		configParam(CP1_PARAM, 0.f, 1.f, 0.f, "");
+		configParam(CP2_PARAM, 0.f, 1.f, 0.f, "");
+
+		configInput(DETUNE_CV_INPUT, "");
+		configInput(TARGET_CV_INPUT, "");
+		configInput(ROOT_CV_INPUT, "");
 		configOutput(OUTPUT_OUTPUT, "");
+		configOutput(GATE_OUTPUT, "");
 
 		const StdLibRandomFloatGenerator random;
 		for (auto& voice : trioVoices) {
@@ -88,19 +99,16 @@ struct Deepnote_rack : Module {
 	void process(const ProcessArgs& args) override {
 		const float valueVolume = 1.0f;
 		const auto valueDetune = params[DETUNE_PARAM].getValue();
-		const auto valueCutoff = params[CUTOFF_PARAM].getValue();
-		const auto valueDirection = params[DIRECTION_PARAM].getValue();
 		const deepnote::NoopTrace traceFunctor;
 
 		auto output{0.f};
 		for (auto& voice : trioVoices) {
 			voice.computeDetune(valueDetune);
-			(valueDirection < 1.f) ? voice.TransitionToTarget() : voice.TransitionToStart();
 			output += (voice.Process(traceFunctor) * valueVolume);
 		}
 		for (auto& voice : duoVoices) {
 			voice.computeDetune(valueDetune);
-			(valueDirection < 1.f) ? voice.TransitionToTarget() : voice.TransitionToStart();
+			//(valueDirection < 1.f) ? voice.TransitionToTarget() : voice.TransitionToStart();
 			//voice.SetAnimationRate(randomFunctor(animationRateRange.GetLow(), animationRateRange.GetHigh()));
 			output += (voice.Process(traceFunctor) * valueVolume);
 
@@ -138,14 +146,19 @@ struct Deepnote_rackWidget : ModuleWidget {
 		addChild(createWidget<ScrewSilver>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 		addChild(createWidget<ScrewSilver>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-		addParam(createParamCentered<RoundHugeBlackKnob>(mm2px(Vec(21.208, 35.39)), module, Deepnote_rack::DETUNE_PARAM));
-		addParam(createParamCentered<RoundHugeBlackKnob>(mm2px(Vec(21.208, 67.859)), module, Deepnote_rack::CUTOFF_PARAM));
-		addParam(createParamCentered<BefacoPush>(mm2px(Vec(21.208, 96.787)), module, Deepnote_rack::DIRECTION_PARAM));
+		addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(22.645, 31.429)), module, Deepnote_rack::DETUNE_PARAM));
+		addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(22.645, 53.986)), module, Deepnote_rack::TARGET_PARAM));
+		addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(22.645, 76.072)), module, Deepnote_rack::RATE_PARAM));
+		addParam(createParamCentered<Trimpot>(mm2px(Vec(7.906, 91.891)), module, Deepnote_rack::CP1_PARAM));
+		addParam(createParamCentered<Trimpot>(mm2px(Vec(22.758, 91.891)), module, Deepnote_rack::CP2_PARAM));
 
-		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(21.208, 116.803)), module, Deepnote_rack::OUTPUT_OUTPUT));
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(6.318, 31.429)), module, Deepnote_rack::DETUNE_CV_INPUT));
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(6.333, 53.986)), module, Deepnote_rack::TARGET_CV_INPUT));
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(6.333, 76.072)), module, Deepnote_rack::ROOT_CV_INPUT));
+
+		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(23.439, 112.642)), module, Deepnote_rack::OUTPUT_OUTPUT));
+		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(7.776, 112.851)), module, Deepnote_rack::GATE_OUTPUT));
 	}
-
-
 };
 
 
