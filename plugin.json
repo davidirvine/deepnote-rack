@@ -1,0 +1,23 @@
+{
+  "slug": "deepnote-rack",
+  "name": "deepnote-rack",
+  "version": "2.0.0",
+  "license": "MIT",
+  "brand": "dmi",
+  "author": "David Irvine",
+  "authorEmail": "",
+  "authorUrl": "",
+  "pluginUrl": "",
+  "manualUrl": "",
+  "sourceUrl": "",
+  "donateUrl": "",
+  "changelogUrl": "",
+  "modules": [
+    {
+      "slug": "deepnote-rack",
+      "name": "deepnote-rack",
+      "description": "",
+      "tags": []
+    }
+  ]
+}

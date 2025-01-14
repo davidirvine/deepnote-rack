@@ -1,0 +1,27 @@
+{
+    "env": {
+        "DAISYSP_DIR": "${workspaceFolder}/thirdparty/DaisySP",
+        "myIncludePath": [
+            "${workspaceFolder}/**",
+            "${DAISYSP_DIR}/Source/**",
+            "${RACK_DIR}/include/**",
+            "${RACK_DIR}/dep/include/**"
+        ]
+    },
+    "configurations": [
+        {
+            "name": "Mac-clang",
+            "cStandard": "c11",
+            "cppStandard": "c++11",
+            "compilerPath": "/usr/bin/clang",
+            "includePath": ["${myIncludePath}"],
+            "intelliSenseMode": "macos-clang-x64",
+            "browse": {
+                "path": [ "${myIncludePath}", "${workspaceFolder}" ],
+                "limitSymbolsToIncludedHeaders": true,
+                "databaseFilename": "${workspaceFolder}/.vscode/browse.vc.db"
+            }
+        }
+    ],
+    "version": 4
+}
