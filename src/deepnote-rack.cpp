@@ -1,5 +1,6 @@
 #include "plugin.hpp"
 #include "voice/deepnotevoice.hpp"
+#include "voice/frequencytable.hpp"
 #include "ranges/range.hpp"
 #include "logger.hpp"
 #include <random>
@@ -21,9 +22,8 @@ struct RackTraceType
 {
     void operator()(const deepnote::TraceValues& values) const
     {
-		INFO("%.4f, %.4f, %.4f, %d, %d, %.4f, %.4f, %.4f, %.4f, %.4f", 
-			values.startRange.GetLow(), 
-			values.startRange.GetHigh(), 
+		INFO("%.4f, %.4f, %d, %d, %.4f, %.4f, %.4f, %.4f, %.4f", 
+			values.startFreq, 
 			values.targetFreq, 
 			values.in_state, 
 			values.out_state, 
@@ -36,13 +36,20 @@ struct RackTraceType
 	}
 };
 
+namespace types = deepnote::nt;
+
 using DuoVoiceType = deepnote::DeepnoteVoice<2>;
 using TrioVoiceType = deepnote::DeepnoteVoice<3>;
 
-const deepnote::Range START_FREQ_RANGE{deepnote::RangeLow(200.f), deepnote::RangeHigh(400.f)};
-const deepnote::Range ANIMATION_RATE_RANGE{deepnote::RangeLow(0.05f), deepnote::RangeHigh(1.5f)};
+const types::OscillatorFrequencyRange START_FREQ_RANGE(deepnote::Range(types::RangeLow(200.f), types::RangeHigh(400.f)));
+const deepnote::Range ANIMATION_RATE_RANGE{types::RangeLow(0.05f), types::RangeHigh(1.5f)};
 
 struct Deepnote_rack : Module {
+
+	TrioVoiceType trioVoices[deepnote::NUM_TRIO_VOICES];
+	DuoVoiceType duoVoices[deepnote::NUM_DUO_VOICES];
+	deepnote::FrequencyTable voiceFrequencies;
+
 	enum ParamId {
 		DETUNE_PARAM,
 		TARGET_PARAM,
@@ -70,11 +77,11 @@ struct Deepnote_rack : Module {
 		const float sample_rate = 48000.f;
 		config(PARAMS_LEN, INPUTS_LEN, OUTPUTS_LEN, LIGHTS_LEN);
 
-		configParam(DETUNE_PARAM, 0.f, 1.f, 0.5f, "detune", " Hz");
-		configParam(TARGET_PARAM, 0.f, 1.f, 0.f, "");
-		configParam(RATE_PARAM, 0.f, 1.f, 0.f, "");
-		configParam(CP1_PARAM, 0.f, 1.f, 0.f, "");
-		configParam(CP2_PARAM, 0.f, 1.f, 0.f, "");
+		configParam(DETUNE_PARAM, 0.f, 2.f, 0.5f, "detune", " Hz");
+		configParam(TARGET_PARAM, 0, 12, 0, "target");
+		configParam(RATE_PARAM, 0.05f, 1.5f, 1.f, "rate_multiplier");
+		configParam(CP1_PARAM, 0.f, 1.f, 0.8f, "control_point_1");
+		configParam(CP2_PARAM, 0.f, 1.f, 0.5f, "control_point_2");
 
 		configInput(DETUNE_CV_INPUT, "");
 		configInput(TARGET_CV_INPUT, "");
@@ -83,56 +90,90 @@ struct Deepnote_rack : Module {
 		configOutput(GATE_OUTPUT, "");
 
 		const StdLibRandomFloatGenerator random;
+		auto index{0};
+		voiceFrequencies.initialize(START_FREQ_RANGE, random);
+
 		for (auto& voice : trioVoices) {
-			voice.Init(sample_rate, random(ANIMATION_RATE_RANGE.GetLow(), ANIMATION_RATE_RANGE.GetHigh()), random);
+			voice.Init(
+				voiceFrequencies.getFrequency(types::VoiceIndex(index++)),
+				types::SampleRate(sample_rate), 
+				types::OscillatorFrequency(random(ANIMATION_RATE_RANGE.GetLow().get(), ANIMATION_RATE_RANGE.GetHigh().get())), 
+				random
+			);
 		}
 
 		for (auto& voice : duoVoices) {
-			voice.Init(sample_rate, random(ANIMATION_RATE_RANGE.GetLow(), ANIMATION_RATE_RANGE.GetHigh()), random);
-			voice.TransitionToTarget();
+			voice.Init(
+				voiceFrequencies.getFrequency(types::VoiceIndex(index++)),
+				types::SampleRate(sample_rate), 
+				types::OscillatorFrequency(random(ANIMATION_RATE_RANGE.GetLow().get(), ANIMATION_RATE_RANGE.GetHigh().get())), 
+				random
+			);
 		}
-
-		//filter.Init(sample_rate);
-		//filter.SetRes(0.0f);
 	}
 
 	void process(const ProcessArgs& args) override {
-		const float valueVolume = 1.0f;
-		const auto valueDetune = params[DETUNE_PARAM].getValue();
+		const auto detune = types::DetuneHz(params[DETUNE_PARAM].getValue());
+		const auto frequencyTableIndex = types::FrequencyTableIndex(params[TARGET_PARAM].getValue());
+		const auto animationMultiplier = types::AnimationMultiplier(params[RATE_PARAM].getValue());
+		const auto cp1 = types::ControlPoint1(params[CP1_PARAM].getValue());
+		const auto cp2 = types::ControlPoint2(params[CP2_PARAM].getValue());
 		const deepnote::NoopTrace traceFunctor;
-
 		auto output{0.f};
+		auto index{0};
+		bool voiceInFlight{false};
+
+		const auto indexChanged = voiceFrequencies.setCurrentIndex(frequencyTableIndex);
+
 		for (auto& voice : trioVoices) {
-			voice.computeDetune(valueDetune);
-			output += (voice.Process(traceFunctor) * valueVolume);
+			
+			output += processVoice(voice, 
+							detune,
+							indexChanged,
+							voiceFrequencies.getFrequency(types::VoiceIndex(index++)),
+							animationMultiplier, 
+							cp1, 
+							cp2, 
+							traceFunctor);
+			if (!voice.IsAtTarget()) {
+				voiceInFlight = true;
+			}
 		}
 		for (auto& voice : duoVoices) {
-			voice.computeDetune(valueDetune);
-			//(valueDirection < 1.f) ? voice.TransitionToTarget() : voice.TransitionToStart();
-			//voice.SetAnimationRate(randomFunctor(animationRateRange.GetLow(), animationRateRange.GetHigh()));
-			output += (voice.Process(traceFunctor) * valueVolume);
-
-
+			output += processVoice(voice, 
+							detune,
+							indexChanged,
+							voiceFrequencies.getFrequency(types::VoiceIndex(index++)),
+							animationMultiplier, 
+							cp1, 
+							cp2, 
+							traceFunctor);
+			if (!voice.IsAtTarget()) {
+				voiceInFlight = true;
+			}
 		}
 
 		outputs[OUTPUT_OUTPUT].setVoltage(output * 5.f);
+
+		if (voiceInFlight) {
+			outputs[GATE_OUTPUT].setVoltage(0.f);
+		} else {
+			outputs[GATE_OUTPUT].setVoltage(10.f);
+		}
 	}
 
-
-	TrioVoiceType trioVoices[4] = {
-		{ START_FREQ_RANGE, 1396.91 },
-		{ START_FREQ_RANGE, 1174.66 },
-		{ START_FREQ_RANGE, 659.25 },
-		{ START_FREQ_RANGE, 587.33 }
-	};
-
-	DuoVoiceType duoVoices[5] = {
-		{ START_FREQ_RANGE, 440.00 },
-		{ START_FREQ_RANGE, 146.83 },
-		{ START_FREQ_RANGE, 110.0 },
-		{ START_FREQ_RANGE, 73.42 },
-		{ START_FREQ_RANGE, 36.71 }
-	};
+	template<typename VoiceType, typename TraceFunctor>
+	float processVoice(VoiceType& voice, const types::DetuneHz& detune, const bool indexChanged, 
+		const types::OscillatorFrequency& targetFrequency, const types::AnimationMultiplier& animationMultiplier,
+		const types::ControlPoint1& cp1, const types::ControlPoint2& cp2, const TraceFunctor& traceFunctor) const
+	{
+		voice.computeDetune(detune);
+		if (indexChanged)
+		{
+			voice.SetTargetFrequency(targetFrequency);
+		}
+		return voice.Process(animationMultiplier, cp1, cp2, traceFunctor);
+	}
 };
 
 
