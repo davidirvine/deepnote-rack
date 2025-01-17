@@ -30,7 +30,7 @@ struct RackTraceType
 			values.animationLfo_value, 
 			values.shapedAnimationValue,
 			values.animationFreq, 
-			values.frequency, 
+			values.currentFrequency, 
 			values.oscValue
 		);
 	}
@@ -79,7 +79,7 @@ struct Deepnote_rack : Module {
 
 		configParam(DETUNE_PARAM, 0.f, 2.f, 0.5f, "detune", " Hz");
 		configParam(TARGET_PARAM, 0, 12, 0, "target");
-		configParam(RATE_PARAM, 0.05f, 1.5f, 1.f, "rate_multiplier");
+		configParam(RATE_PARAM, 0.05f, 5.0f, 1.f, "rate_multiplier");
 		configParam(CP1_PARAM, 0.f, 1.f, 0.8f, "control_point_1");
 		configParam(CP2_PARAM, 0.f, 1.f, 0.5f, "control_point_2");
 
@@ -119,6 +119,7 @@ struct Deepnote_rack : Module {
 		const auto cp1 = types::ControlPoint1(params[CP1_PARAM].getValue());
 		const auto cp2 = types::ControlPoint2(params[CP2_PARAM].getValue());
 		const deepnote::NoopTrace traceFunctor;
+		//const RackTraceType traceFunctor;
 		auto output{0.f};
 		auto index{0};
 		bool voiceInFlight{false};
@@ -126,8 +127,8 @@ struct Deepnote_rack : Module {
 		const auto indexChanged = voiceFrequencies.setCurrentIndex(frequencyTableIndex);
 
 		for (auto& voice : trioVoices) {
-			
-			output += processVoice(voice, 
+			output += processVoice(
+							voice, 
 							detune,
 							indexChanged,
 							voiceFrequencies.getFrequency(types::VoiceIndex(index++)),
@@ -140,7 +141,8 @@ struct Deepnote_rack : Module {
 			}
 		}
 		for (auto& voice : duoVoices) {
-			output += processVoice(voice, 
+			output += processVoice(
+							voice, 
 							detune,
 							indexChanged,
 							voiceFrequencies.getFrequency(types::VoiceIndex(index++)),
