@@ -49,6 +49,7 @@ struct Deepnote_rack : Module {
 	TrioVoiceType trioVoices[deepnote::NUM_TRIO_VOICES];
 	DuoVoiceType duoVoices[deepnote::NUM_DUO_VOICES];
 	deepnote::FrequencyTable voiceFrequencies;
+	dsp::PulseGenerator triggerPulse;
 
 	enum ParamId {
 		DETUNE_PARAM,
@@ -79,7 +80,7 @@ struct Deepnote_rack : Module {
 
 		configParam(DETUNE_PARAM, 0.f, 2.f, 0.5f, "detune", " Hz");
 		configParam(TARGET_PARAM, 0, 12, 0, "target");
-		configParam(RATE_PARAM, 0.05f, 5.0f, 1.f, "rate_multiplier");
+		configParam(RATE_PARAM, 0.05f, 10.0f, 1.f, "rate_multiplier");
 		configParam(CP1_PARAM, 0.f, 1.f, 0.8f, "control_point_1");
 		configParam(CP2_PARAM, 0.f, 1.f, 0.5f, "control_point_2");
 
@@ -126,7 +127,9 @@ struct Deepnote_rack : Module {
 
 		const auto indexChanged = voiceFrequencies.setCurrentIndex(frequencyTableIndex);
 
-		for (auto& voice : trioVoices) {
+		for (auto& voice : trioVoices) 
+		{
+			const auto _atTarget = voice.IsAtTarget();
 			output += processVoice(
 							voice, 
 							detune,
@@ -136,11 +139,20 @@ struct Deepnote_rack : Module {
 							cp1, 
 							cp2, 
 							traceFunctor);
-			if (!voice.IsAtTarget()) {
+			
+			if (!voice.IsAtTarget()) 
+			{
 				voiceInFlight = true;
 			}
+
+			if (voice.IsAtTarget() && !_atTarget) 
+			{
+				this->triggerPulse.trigger(1e-3f);
+			}
 		}
-		for (auto& voice : duoVoices) {
+		for (auto& voice : duoVoices) 
+		{
+			const auto _atTarget = voice.IsAtTarget();
 			output += processVoice(
 							voice, 
 							detune,
@@ -150,18 +162,32 @@ struct Deepnote_rack : Module {
 							cp1, 
 							cp2, 
 							traceFunctor);
-			if (!voice.IsAtTarget()) {
+			
+			//	Gate is high when all voices are at target: !voiceInFlight
+			if (!voice.IsAtTarget()) 
+			{
 				voiceInFlight = true;
+			}
+
+			//	the trigger fires when 1 or more voices arrive at target
+			if (voice.IsAtTarget() && !_atTarget) 
+			{
+				this->triggerPulse.trigger(1e-3f);
 			}
 		}
 
 		outputs[OUTPUT_OUTPUT].setVoltage(output * 5.f);
 
-		if (voiceInFlight) {
+		if (voiceInFlight) 
+		{
 			outputs[GATE_OUTPUT].setVoltage(0.f);
-		} else {
+		} else 
+		{
 			outputs[GATE_OUTPUT].setVoltage(10.f);
 		}
+
+		//bool fall = this->triggerPulse.process(args.sampleTime);
+		//outputs[FALL_OUTPUT].setVoltage(fall ? 10.f : 0.f, c);
 	}
 
 	template<typename VoiceType, typename TraceFunctor>
