@@ -159,6 +159,7 @@ struct Deepnote_rack : Module {
 		configParam(DETUNE_PARAM, 0.f, 2.f, 0.5f, "Detune", " Hz");
 		configParam(TARGET_TRIM_PARAM, 0.f, 1.f, 0.f, "Root Note Trim");
 		configParam(TARGET_PARAM, 0, 11, 0, "Root Note");
+		getParamQuantity(TARGET_PARAM)->snapEnabled = true;
 		configParam(RATE_TRIM_PARAM, 0.f, 1.f, 0.f, "Animation Rate Trin");
 		configParam(RATE_PARAM, 0.05f, 10.0f, 1.f, "Animation Rate Mulitplier");
 		configParam(CP1_PARAM, 0.f, 1.f, 0.8f, "Control Point 1");
@@ -205,25 +206,9 @@ struct Deepnote_rack : Module {
 
 
 	void process(const ProcessArgs& args) override {	
-		const float detune_param = params[DETUNE_PARAM].getValue();
-		const float detune_voltage = inputs[DETUNE_INPUT].getVoltage();
-		const float detune_trim = params[DETUNE_TRIM_PARAM].getValue();
-		const auto detune = types::DetuneHz(detune_param + detune_voltage / 10.f * detune_trim);
-		
-		const float target_param = params[TARGET_PARAM].getValue();	// integer
-		const float target_voltage = inputs[TARGET_INPUT].getVoltage();
-		const float target_trim = params[TARGET_TRIM_PARAM].getValue();
-		const int offset = ((target_voltage * target_trim)  / 10.f) * 11;
-		const int target = target_param + offset;
-
-		const auto frequencyTableIndex = types::FrequencyTableIndex(target);
-
-		const float rate_param = params[RATE_PARAM].getValue();
-		const float rate_voltage = inputs[RATE_INPUT].getVoltage();
-		const float rate_trim = params[RATE_TRIM_PARAM].getValue();
-		const float rate = rate_param + rate_voltage / 10.f * rate_trim;
-		const auto animationMultiplier = types::AnimationMultiplier(rate);
-
+		const auto detune = types::DetuneHz(getValueFromInputCombo(DETUNE_PARAM, DETUNE_INPUT, DETUNE_TRIM_PARAM));
+		const auto animationMultiplier = types::AnimationMultiplier(getValueFromInputCombo(RATE_PARAM, RATE_INPUT, RATE_TRIM_PARAM));
+		const auto frequencyTableIndex = inputs[_1VOCT_INPUT].isConnected() ? getFrequencyTableIndexFrom1VOct() : getFrequencyTableIndexFromTargetParam();
 		const auto cp1 = types::ControlPoint1(params[CP1_PARAM].getValue());
 		const auto cp2 = types::ControlPoint2(params[CP2_PARAM].getValue());
 		const deepnote::NoopTrace traceFunctor;
@@ -319,6 +304,32 @@ struct Deepnote_rack : Module {
 		lights[RESET_LIGHT].setSmoothBrightness(reset, args.sampleTime);
 	}
 
+
+	float getValueFromInputCombo(const ParamId param_id, const InputId input_id, const ParamId trim_id) 
+	{
+		const float param = params[param_id].getValue();
+		const float voltage = inputs[input_id].getVoltage();
+		const float trim = params[trim_id].getValue();
+		return param + voltage / 10.f * trim;
+	}
+
+
+	types::FrequencyTableIndex getFrequencyTableIndexFrom1VOct()  
+	{
+		const float voct_voltage = inputs[_1VOCT_INPUT].getVoltage();
+		return types::FrequencyTableIndex(((voct_voltage - (int)voct_voltage) / 0.083f) + 0.5f);
+	}
+
+
+	types::FrequencyTableIndex getFrequencyTableIndexFromTargetParam()  
+	{
+		const float target = params[TARGET_PARAM].getValue();
+		const float target_voltage = inputs[TARGET_INPUT].getVoltage();
+		const float target_trim = params[TARGET_TRIM_PARAM].getValue();
+		return types::FrequencyTableIndex(target + (((target_voltage * target_trim)  / 10.f) * 11));
+	}
+
+
 	template<typename VoiceType, typename TraceFunctor>
 	float processVoice(VoiceType& voice, const types::DetuneHz& detune, const bool indexChanged, 
 		const types::OscillatorFrequency& targetFrequency, const types::AnimationMultiplier& animationMultiplier,
@@ -352,37 +363,39 @@ struct Deepnote_rackWidget : ModuleWidget {
 		addChild(createWidget<ThemedScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, 0)));
 		addChild(createWidget<ThemedScrew>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 		addChild(createWidget<ThemedScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
-
-		addParam(createParamCentered<Trimpot>(mm2px(Vec(23.265, 27.1)), module, Deepnote_rack::DETUNE_TRIM_PARAM));
-		addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(39.291, 27.1)), module, Deepnote_rack::DETUNE_PARAM));
-		addParam(createParamCentered<Trimpot>(mm2px(Vec(23.265, 48.8)), module, Deepnote_rack::TARGET_TRIM_PARAM));
-		addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(39.291, 48.8)), module, Deepnote_rack::TARGET_PARAM));
-		addParam(createParamCentered<Trimpot>(mm2px(Vec(23.265, 70.721)), module, Deepnote_rack::RATE_TRIM_PARAM));
-		addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(39.291, 70.721)), module, Deepnote_rack::RATE_PARAM));
+		
+		addParam(createParamCentered<Trimpot>(mm2px(Vec(20.619, 27.1)), module, Deepnote_rack::DETUNE_TRIM_PARAM));
+		addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(41.937, 27.1)), module, Deepnote_rack::DETUNE_PARAM));
+		addParam(createParamCentered<Trimpot>(mm2px(Vec(20.619, 48.8)), module, Deepnote_rack::TARGET_TRIM_PARAM));
+		addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(41.937, 48.8)), module, Deepnote_rack::TARGET_PARAM));
+		addParam(createParamCentered<Trimpot>(mm2px(Vec(20.619, 70.721)), module, Deepnote_rack::RATE_TRIM_PARAM));
+		addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(41.937, 70.721)), module, Deepnote_rack::RATE_PARAM));
 		addParam(createParamCentered<Trimpot>(mm2px(Vec(14.436, 83.667)), module, Deepnote_rack::CP1_PARAM));
 		addParam(createParamCentered<Trimpot>(mm2px(Vec(37.363, 83.667)), module, Deepnote_rack::CP2_PARAM));
 
-		addParam(createLightParamCentered<VCVLightBezel<WhiteLight>>(mm2px(Vec(26.988, 94.501)), module, Deepnote_rack::RESET_PARAM, Deepnote_rack::RESET_LIGHT));
+		addParam(createLightParamCentered<VCVLightBezel<WhiteLight>>(mm2px(Vec(25.91, 94.501)), module, Deepnote_rack::RESET_PARAM, Deepnote_rack::RESET_LIGHT));
 
-		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(10.269, 27.1)), module, Deepnote_rack::DETUNE_INPUT));
-		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(10.269, 48.8)), module, Deepnote_rack::TARGET_INPUT));
-		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(10.269, 59.729)), module, Deepnote_rack::_1VOCT_INPUT));
-		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(10.269, 70.721)), module, Deepnote_rack::RATE_INPUT));
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(7.623, 27.1)), module, Deepnote_rack::DETUNE_INPUT));
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(7.623, 48.8)), module, Deepnote_rack::TARGET_INPUT));
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(7.623, 59.729)), module, Deepnote_rack::_1VOCT_INPUT));
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(7.623, 70.721)), module, Deepnote_rack::RATE_INPUT));
 		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(10.269, 94.501)), module, Deepnote_rack::RESET_INPUT));
 
 		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(11.106, 110.769)), module, Deepnote_rack::TRIGGER_OUTPUT));
 		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(40.715, 110.769)), module, Deepnote_rack::OUTPUT_OUTPUT));
 		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(25.91, 110.977)), module, Deepnote_rack::GATE_OUTPUT));
 
-		RootNoteDisplay<Deepnote_rack>* rootDisplay = createWidget<RootNoteDisplay<Deepnote_rack>>(mm2px(Vec(20.0, 35.292)));
+		RootNoteDisplay<Deepnote_rack>* rootDisplay = createWidget<RootNoteDisplay<Deepnote_rack>>(mm2px(Vec(20.0, 34.0)));
 		rootDisplay->box.size = mm2px(Vec(12.00, 9.00));
 		rootDisplay->module = module;
 		addChild(rootDisplay);
 
-		CurveDisplay<Deepnote_rack>* curveDisplay = createWidget<CurveDisplay<Deepnote_rack>>(mm2px(Vec(20.0, 79.167)));
+		CurveDisplay<Deepnote_rack>* curveDisplay = createWidget<CurveDisplay<Deepnote_rack>>(mm2px(Vec(20.0, 79.0)));
 		curveDisplay->box.size = mm2px(Vec(12.00, 9.00));
 		curveDisplay->module = module;
 		addChild(curveDisplay);
+
+
 	}
 };
 
