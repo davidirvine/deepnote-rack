@@ -26,7 +26,7 @@ struct RootNoteDisplay : LedDisplay
 				return;
 			nvgFontSize(args.vg, 24);
 			nvgFontFaceId(args.vg, font->handle);
-			nvgFillColor(args.vg, SCHEME_YELLOW);
+			nvgFillColor(args.vg, SCHEME_BLUE);
 			nvgText(args.vg, 4.0, 20.0, rootNoteString.c_str(), NULL);
 		}
 
@@ -65,7 +65,7 @@ struct CurveDisplay : LedDisplay
 			nvgLineCap(args.vg, NVG_ROUND);
 			nvgMiterLimit(args.vg, 2.f);
 			nvgStrokeWidth(args.vg, 1.5f);
-			nvgStrokeColor(args.vg, SCHEME_YELLOW);
+			nvgStrokeColor(args.vg, SCHEME_BLUE);
 			nvgStroke(args.vg);
 		}
 
