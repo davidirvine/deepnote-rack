@@ -7,7 +7,7 @@
 #include <string>
 #include <vector>
 
-
+using simd::float_4;
 
 template <class TModule>
 struct RootNoteDisplay : LedDisplay 
@@ -47,15 +47,14 @@ struct CurveDisplay : LedDisplay
 
 		if (layer == 1) {
 			nvgBeginPath(args.vg);
-			nvgMoveTo(args.vg, 0, 0);
 
 			const auto shaper = deepnote::BezierUnitShaper(
-				deepnote::nt::ControlPoint1(module->params[TModule::CP1_PARAM].getValue()),
-				deepnote::nt::ControlPoint2(module->params[TModule::CP2_PARAM].getValue())
+				deepnote::nt::ControlPoint1(module ? module->params[TModule::CP1_PARAM].getValue() : 0.8f),
+				deepnote::nt::ControlPoint2(module ? module->params[TModule::CP2_PARAM].getValue() : 0.5f)
 			);
 
 			for (int x = 0; x < box.size.x; x++) {
-				const float y = shaper(x * (1.f / box.size.x));
+				const float y = shaper( x * (1.f / box.size.x));
 				if (x == 0) {
 					nvgMoveTo(args.vg, x, box.size.y - (y * box.size.y));
 				} else {
@@ -205,10 +204,26 @@ struct Deepnote_rack : Module {
 	//
 
 
-	void process(const ProcessArgs& args) override {
-		const auto detune = types::DetuneHz(params[DETUNE_PARAM].getValue());
-		const auto frequencyTableIndex = types::FrequencyTableIndex(params[TARGET_PARAM].getValue());
-		const auto animationMultiplier = types::AnimationMultiplier(params[RATE_PARAM].getValue());
+	void process(const ProcessArgs& args) override {	
+		const float detune_param = params[DETUNE_PARAM].getValue();
+		const float detune_voltage = inputs[DETUNE_INPUT].getVoltage();
+		const float detune_trim = params[DETUNE_TRIM_PARAM].getValue();
+		const auto detune = types::DetuneHz(detune_param + detune_voltage / 10.f * detune_trim);
+		
+		const float target_param = params[TARGET_PARAM].getValue();	// integer
+		const float target_voltage = inputs[TARGET_INPUT].getVoltage();
+		const float target_trim = params[TARGET_TRIM_PARAM].getValue();
+		const int offset = ((target_voltage * target_trim)  / 10.f) * 11;
+		const int target = target_param + offset;
+
+		const auto frequencyTableIndex = types::FrequencyTableIndex(target);
+
+		const float rate_param = params[RATE_PARAM].getValue();
+		const float rate_voltage = inputs[RATE_INPUT].getVoltage();
+		const float rate_trim = params[RATE_TRIM_PARAM].getValue();
+		const float rate = rate_param + rate_voltage / 10.f * rate_trim;
+		const auto animationMultiplier = types::AnimationMultiplier(rate);
+
 		const auto cp1 = types::ControlPoint1(params[CP1_PARAM].getValue());
 		const auto cp2 = types::ControlPoint2(params[CP2_PARAM].getValue());
 		const deepnote::NoopTrace traceFunctor;
@@ -223,69 +238,73 @@ struct Deepnote_rack : Module {
 
 		const auto indexChanged = voiceFrequencies.setCurrentIndex(frequencyTableIndex);
 
-		for (auto& voice : trioVoices) 
+		if (outputs[OUTPUT_OUTPUT].isConnected())
 		{
-			const auto _atTarget = voice.IsAtTarget();
-
-			if (reset)
-			{
-				voice.ResetStartFrequency(voiceFrequencies.getResetFrequency(types::VoiceIndex(index)));
-			}
-			output += processVoice(
-							voice, 
-							detune,
-							indexChanged,
-							voiceFrequencies.getFrequency(types::VoiceIndex(index)),
-							animationMultiplier, 
-							cp1, 
-							cp2, 
-							traceFunctor);
 			
-			if (!voice.IsAtTarget()) 
+			for (auto& voice : trioVoices) 
 			{
-				voiceInFlight = true;
+				const auto _atTarget = voice.IsAtTarget();
+
+				if (reset)
+				{
+					voice.ResetStartFrequency(voiceFrequencies.getResetFrequency(types::VoiceIndex(index)));
+				}
+				output += processVoice(
+								voice, 
+								detune,
+								indexChanged,
+								voiceFrequencies.getFrequency(types::VoiceIndex(index)),
+								animationMultiplier, 
+								cp1, 
+								cp2, 
+								traceFunctor);
+				
+				if (!voice.IsAtTarget()) 
+				{
+					voiceInFlight = true;
+				}
+
+				if (voice.IsAtTarget() && !_atTarget) 
+				{
+					this->triggerPulse.trigger(1e-3f);
+				}
+				index++;
+			}
+			for (auto& voice : duoVoices) 
+			{
+				if (reset)
+				{
+					voice.ResetStartFrequency(voiceFrequencies.getResetFrequency(types::VoiceIndex(index)));
+				}
+
+				const auto _atTarget = voice.IsAtTarget();
+				output += processVoice(
+								voice, 
+								detune,
+								indexChanged,
+								voiceFrequencies.getFrequency(types::VoiceIndex(index)),
+								animationMultiplier, 
+								cp1, 
+								cp2, 
+								traceFunctor);
+				
+				//	Gate is high when all voices are at target: !voiceInFlight
+				if (!voice.IsAtTarget()) 
+				{
+					voiceInFlight = true;
+				}
+
+				//	the trigger fires when 1 or more voices arrive at target
+				if (voice.IsAtTarget() && !_atTarget) 
+				{
+					this->triggerPulse.trigger(1e-3f);
+				}
+				index++;
 			}
 
-			if (voice.IsAtTarget() && !_atTarget) 
-			{
-				this->triggerPulse.trigger(1e-3f);
-			}
-			index++;
+			outputs[OUTPUT_OUTPUT].setVoltage(output * 5.f);
 		}
-		for (auto& voice : duoVoices) 
-		{
-			if (reset)
-			{
-				voice.ResetStartFrequency(voiceFrequencies.getResetFrequency(types::VoiceIndex(index)));
-			}
-
-			const auto _atTarget = voice.IsAtTarget();
-			output += processVoice(
-							voice, 
-							detune,
-							indexChanged,
-							voiceFrequencies.getFrequency(types::VoiceIndex(index)),
-							animationMultiplier, 
-							cp1, 
-							cp2, 
-							traceFunctor);
-			
-			//	Gate is high when all voices are at target: !voiceInFlight
-			if (!voice.IsAtTarget()) 
-			{
-				voiceInFlight = true;
-			}
-
-			//	the trigger fires when 1 or more voices arrive at target
-			if (voice.IsAtTarget() && !_atTarget) 
-			{
-				this->triggerPulse.trigger(1e-3f);
-			}
-			index++;
-		}
-
-		outputs[OUTPUT_OUTPUT].setVoltage(output * 5.f);
-
+		
 		if (voiceInFlight) 
 		{
 			outputs[GATE_OUTPUT].setVoltage(0.f);
