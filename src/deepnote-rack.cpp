@@ -3,9 +3,16 @@
 #include "voice/frequencytable.hpp"
 #include "ranges/range.hpp"
 #include "logger.hpp"
+#include <array>
+#include <functional>
+#include <iomanip>
+#include <iostream>
 #include <random>
 #include <string>
+#include <sstream>
 #include <vector>
+
+namespace nt = deepnote::nt;
 
 template <class TModule>
 struct RootNoteDisplay : LedDisplay
@@ -76,51 +83,120 @@ struct CurveDisplay : LedDisplay
 	}
 };
 
-struct StdLibRandomFloatGenerator
+
+float get_random_float(float low, float high)
 {
-	//  This isn't the fastest random number generator but we don't require a fast one
-	float operator()(float low, float high) const
-	{
-		std::random_device rd;
-		std::mt19937 gen(rd());
-		std::uniform_real_distribution<> dis(low, high);
-		return dis(gen);
-	}
-};
+	// This isn't the fastest random number generator
+	// but we don't require a fast one
+	static std::random_device rd;
+	static std::mt19937 gen(rd());
+	std::uniform_real_distribution<> dis(low, high);
+	return dis(gen);
+}
+
 
 struct RackTraceType
 {
-	void operator()(const deepnote::TraceValues &values) const
+	RackTraceType() 
 	{
-		INFO("%.4f, %.4f, %d, %d, %.4f, %.4f, %.4f, %.4f, %.4f",
-			 values.start_freq,
-			 values.target_freq,
-			 values.in_state,
-			 values.out_state,
-			 values.animation_lfo_value,
-			 values.shaped_animation_value,
-			 values.animation_freq,
-			 values.current_frequency,
-			 values.osc_value);
+		oss << std::fixed << std::setprecision(4);
 	}
+
+	template <typename T, typename... Args>
+	void operator()(const T &first, Args &&... rest)
+	{
+		oss << first << ", ";
+		(*this)(rest...);
+	}
+	
+	template <typename T>
+	void operator()(const T &value)
+	{
+		oss << value << std::endl;
+		INFO(oss.str());
+		oss.str("");
+		oss.clear();
+	}
+
+private:
+	std::ostringstream oss;
 };
 
-namespace types = deepnote::nt;
 
-using DuoVoiceType = deepnote::DeepnoteVoice<2>;
-using TrioVoiceType = deepnote::DeepnoteVoice<3>;
+// Voices
+const int NUM_OSC_DUO = 2;
+const int NUM_DUO_VOICES = 5;
 
-const types::OscillatorFrequencyRange START_FREQ_RANGE(deepnote::Range(types::RangeLow(200.f), types::RangeHigh(400.f)));
-const deepnote::Range ANIMATION_RATE_RANGE{types::RangeLow(0.05f), types::RangeHigh(1.5f)};
+const int NUM_OSC_TRIO = 3;
+const int NUM_TRIO_VOICES = 4;
+
+using DuoVoiceType = deepnote::DeepnoteVoice<NUM_OSC_DUO>;
+std::array<DuoVoiceType, NUM_DUO_VOICES> duo_voices;
+
+using TrioVoiceType = deepnote::DeepnoteVoice<NUM_OSC_TRIO>;
+std::array<TrioVoiceType, NUM_TRIO_VOICES> trio_voices;
+
+const int FREQ_TABLE_WIDTH = NUM_TRIO_VOICES + NUM_DUO_VOICES;
+const int FREQ_TABLE_HEIGHT = 13;
+
+// Generate a random frequency with in a range of frequencies
+// This function is stored in the the first row of the frequency table allowing
+// the drone to start with a new random "chord" each time it is started.
+deepnote::FrequencyFunc random_start_freq = []()
+{
+	const auto low = nt::RangeLow(200.f);
+	const auto high = nt::RangeHigh(400.f);
+	return nt::OscillatorFrequency(get_random_float(low.get(), high.get()));
+};
+
+// Return the fucntion that returns a fixed frequency
+deepnote::FrequencyFunc freq(const float f)
+{
+	return deepnote::FrequencyFunc([f]()
+								  { return nt::OscillatorFrequency(f); });
+};
+
+// The rows contain the frequencies for the target "chord" to be played by the drone.
+// There is one frequency per voice in the drone in each column.
+// The first row will contain a random start "chord".
+// Subsequent rows will contain the the chord rooted at all 12 notes in the
+// chromatic scale.
+//
+// 1 = C, 2 = C#, 3 = D, 4 = D#, 5 = E, 6 = F, 7 = F#, 8 = G, 9 = G#, 10 = A, 11 = A#, 12 = B
+//
+// See tools/freqtable-builder.py for the generation of the values in the table
+deepnote::FrequencyTable<FREQ_TABLE_HEIGHT, FREQ_TABLE_WIDTH> target_freq_table({{
+	{random_start_freq, random_start_freq, random_start_freq, random_start_freq, random_start_freq, random_start_freq, random_start_freq, random_start_freq, random_start_freq},
+	{freq(1244.51f), freq(1046.50f), freq(587.33f), freq(523.25f), freq(392.00f), freq(130.81f), freq(98.00f), freq(65.41f), freq(32.70f)},
+	{freq(1318.51f), freq(1108.73f), freq(622.25f), freq(554.37f), freq(415.30f), freq(138.59f), freq(103.83f), freq(69.30f), freq(34.65f)},
+	{freq(1396.91f), freq(1174.66f), freq(659.26f), freq(587.33f), freq(440.00f), freq(146.83f), freq(110.00f), freq(73.42f), freq(36.71f)},
+	{freq(1479.98f), freq(1244.51f), freq(698.46f), freq(622.25f), freq(466.16f), freq(155.56f), freq(116.54f), freq(77.78f), freq(38.89f)},
+	{freq(1567.98f), freq(1318.51f), freq(739.99f), freq(659.26f), freq(493.88f), freq(164.81f), freq(123.47f), freq(82.41f), freq(41.20f)},
+	{freq(1661.22f), freq(1396.91f), freq(783.99f), freq(698.46f), freq(523.25f), freq(174.61f), freq(130.81f), freq(87.31f), freq(43.65f)},
+	{freq(1760.00f), freq(1479.98f), freq(830.61f), freq(739.99f), freq(554.37f), freq(185.00f), freq(138.59f), freq(92.50f), freq(46.25f)},
+	{freq(1864.66f), freq(1567.98f), freq(880.00f), freq(783.99f), freq(587.33f), freq(196.00f), freq(146.83f), freq(98.00f), freq(49.00f)},
+	{freq(1975.53f), freq(1661.22f), freq(932.33f), freq(830.61f), freq(622.25f), freq(207.65f), freq(155.56f), freq(103.83f), freq(51.91f)},
+	{freq(2093.00f), freq(1760.00f), freq(987.77f), freq(880.00f), freq(659.26f), freq(220.00f), freq(164.81f), freq(110.00f), freq(55.00f)},
+	{freq(2217.46f), freq(1864.66f), freq(1046.50f), freq(932.33f), freq(698.46f), freq(233.08f), freq(174.61f), freq(116.54f), freq(58.27f)},
+	{freq(2349.32f), freq(1975.53f), freq(1108.73f), freq(987.77f), freq(739.99f), freq(246.94f), freq(185.00f), freq(123.47f), freq(61.74f)}}});
+
+// Generate a random animation frequency
+nt::OscillatorFrequency random_animation_freq()
+{
+	const auto low = nt::RangeLow(0.5f);
+	const auto high = nt::RangeHigh(1.5f);
+	return nt::OscillatorFrequency(get_random_float(low.get(), high.get()));
+}
+
+
 
 struct DeepnoteRack : Module
 {
-
-	TrioVoiceType trio_voices[deepnote::NUM_TRIO_VOICES];
-	DuoVoiceType duo_voices[deepnote::NUM_DUO_VOICES];
-	deepnote::FrequencyTable voice_frequencies;
+	std::array<TrioVoiceType, NUM_TRIO_VOICES> trio_voices;
+	std::array<DuoVoiceType, NUM_DUO_VOICES> duo_voices;
 	dsp::PulseGenerator trigger_pulse;
 	dsp::SchmittTrigger reset_schmitt;
+	nt::FrequencyTableIndex frequency_table_index{0};
 
 	enum ParamId
 	{
@@ -183,26 +259,23 @@ struct DeepnoteRack : Module
 		configOutput(OUTPUT_OUTPUT, "Output");
 		configOutput(GATE_OUTPUT, "Gate");
 
-		const StdLibRandomFloatGenerator random;
-		auto index{0};
-		voice_frequencies.initialize(START_FREQ_RANGE, random);
+		auto voice_index{0};
+		const auto start_table_index{0};
 
 		for (auto &voice : trio_voices)
 		{
 			voice.init(
-				voice_frequencies.get_frequency(types::VoiceIndex(index++)),
-				types::SampleRate(sample_rate),
-				types::OscillatorFrequency(random(ANIMATION_RATE_RANGE.get_low().get(), ANIMATION_RATE_RANGE.get_high().get())),
-				random);
+				target_freq_table.get(nt::FrequencyTableIndex(start_table_index), nt::VoiceIndex(voice_index++)),
+				nt::SampleRate(sample_rate),
+				random_animation_freq());
 		}
 
 		for (auto &voice : duo_voices)
 		{
 			voice.init(
-				voice_frequencies.get_frequency(types::VoiceIndex(index++)),
-				types::SampleRate(sample_rate),
-				types::OscillatorFrequency(random(ANIMATION_RATE_RANGE.get_low().get(), ANIMATION_RATE_RANGE.get_high().get())),
-				random);
+				target_freq_table.get(nt::FrequencyTableIndex(start_table_index), nt::VoiceIndex(voice_index++)),
+				nt::SampleRate(sample_rate),
+				random_animation_freq());
 		}
 	}
 
@@ -212,11 +285,14 @@ struct DeepnoteRack : Module
 
 	void process(const ProcessArgs &args) override
 	{
-		const auto detune = types::DetuneHz(get_value_from_input_combo(DETUNE_PARAM, DETUNE_INPUT, DETUNE_TRIM_PARAM));
-		const auto animation_multiplier = types::AnimationMultiplier(get_value_from_input_combo(RATE_PARAM, RATE_INPUT, RATE_TRIM_PARAM));
-		const auto frequency_table_index = inputs[_1VOCT_INPUT].isConnected() ? get_frequency_table_index_from_1VOct() : get_frequency_table_index_from_target_param();
-		const auto cp1 = types::ControlPoint1(params[CP1_PARAM].getValue());
-		const auto cp2 = types::ControlPoint2(params[CP2_PARAM].getValue());
+
+
+		const auto detune = nt::DetuneHz(get_value_from_input_combo(DETUNE_PARAM, DETUNE_INPUT, DETUNE_TRIM_PARAM));
+		const auto animation_multiplier = nt::AnimationMultiplier(get_value_from_input_combo(RATE_PARAM, RATE_INPUT, RATE_TRIM_PARAM));
+		const auto new_freq_table_index = inputs[_1VOCT_INPUT].isConnected() ? 
+			get_frequency_table_index_from_1VOct() : get_frequency_table_index_from_target_param();
+		const auto cp1 = nt::ControlPoint1(params[CP1_PARAM].getValue());
+		const auto cp2 = nt::ControlPoint2(params[CP2_PARAM].getValue());
 		const deepnote::NoopTrace trace_functor;
 		// const RackTraceType trace_functor;
 		auto output{0.f};
@@ -227,7 +303,8 @@ struct DeepnoteRack : Module
 		reset_schmitt.process(inputs[RESET_INPUT].getVoltage(), 0.1f, 1.f);
 		bool reset = reset_schmitt.isHigh() || params[RESET_PARAM].getValue() > 0.f;
 
-		const auto index_changed = voice_frequencies.set_current_index(frequency_table_index);
+		const auto index_changed = (frequency_table_index.get() != new_freq_table_index.get());
+		frequency_table_index = new_freq_table_index;
 
 		if (outputs[OUTPUT_OUTPUT].isConnected())
 		{
@@ -238,13 +315,13 @@ struct DeepnoteRack : Module
 
 				if (reset)
 				{
-					voice.reset_start_frequency(voice_frequencies.get_reset_frequency(types::VoiceIndex(index)));
+					voice.set_start_frequency(target_freq_table.get(nt::FrequencyTableIndex(0), nt::VoiceIndex(index)));
 				}
 				output += process_voice(
 					voice,
 					detune,
 					index_changed,
-					voice_frequencies.get_frequency(types::VoiceIndex(index)),
+					target_freq_table.get(frequency_table_index, nt::VoiceIndex(index)),
 					animation_multiplier,
 					cp1,
 					cp2,
@@ -265,7 +342,7 @@ struct DeepnoteRack : Module
 			{
 				if (reset)
 				{
-					voice.reset_start_frequency(voice_frequencies.get_reset_frequency(types::VoiceIndex(index)));
+					voice.set_start_frequency(target_freq_table.get(nt::FrequencyTableIndex(0), nt::VoiceIndex(index)));
 				}
 
 				const auto is_at_target_pre = voice.is_at_target();
@@ -273,7 +350,7 @@ struct DeepnoteRack : Module
 					voice,
 					detune,
 					index_changed,
-					voice_frequencies.get_frequency(types::VoiceIndex(index)),
+					target_freq_table.get(frequency_table_index, nt::VoiceIndex(index)),
 					animation_multiplier,
 					cp1,
 					cp2,
@@ -319,26 +396,26 @@ struct DeepnoteRack : Module
 		return param + voltage / 10.f * trim;
 	}
 
-	types::FrequencyTableIndex get_frequency_table_index_from_1VOct()
+	nt::FrequencyTableIndex get_frequency_table_index_from_1VOct()
 	{
 		const float voct_voltage = inputs[_1VOCT_INPUT].getVoltage();
-		return types::FrequencyTableIndex(((voct_voltage - (int)voct_voltage) / 0.083f) + 0.5f);
+		return nt::FrequencyTableIndex(((voct_voltage - (int)voct_voltage) / 0.083f) + 0.5f);
 	}
 
-	types::FrequencyTableIndex get_frequency_table_index_from_target_param()
+	nt::FrequencyTableIndex get_frequency_table_index_from_target_param()
 	{
 		const float target = params[TARGET_PARAM].getValue();
 		const float target_voltage = inputs[TARGET_INPUT].getVoltage();
 		const float target_trim = params[TARGET_TRIM_PARAM].getValue();
-		return types::FrequencyTableIndex(target + (((target_voltage * target_trim) / 10.f) * 11));
+		return nt::FrequencyTableIndex(target + (((target_voltage * target_trim) / 10.f) * 11));
 	}
 
 	template <typename VoiceType, typename TraceFunctor>
-	float process_voice(VoiceType &voice, const types::DetuneHz &detune, const bool index_changed,
-						const types::OscillatorFrequency &target_frequency, const types::AnimationMultiplier &animation_multiplier,
-						const types::ControlPoint1 &cp1, const types::ControlPoint2 &cp2, const TraceFunctor &trace_functor) const
+	float process_voice(VoiceType &voice, const nt::DetuneHz &detune, const bool index_changed,
+						const nt::OscillatorFrequency &target_frequency, const nt::AnimationMultiplier &animation_multiplier,
+						const nt::ControlPoint1 &cp1, const nt::ControlPoint2 &cp2, const TraceFunctor &trace_functor) const
 	{
-		voice.compute_detune(detune);
+		voice.set_detune(detune);
 		if (index_changed)
 		{
 			voice.set_target_frequency(target_frequency);
@@ -351,7 +428,7 @@ struct DeepnoteRack : Module
 		constexpr size_t NUM_NOTES = 12;
 		const std::string notes[NUM_NOTES] = {
 			"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
-		return notes[voice_frequencies.get_current_index() % NUM_NOTES];
+		return notes[frequency_table_index.get() % NUM_NOTES];
 	}
 };
 

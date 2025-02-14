@@ -66,6 +66,7 @@
         "condition_variable": "cpp",
         "forward_list": "cpp",
         "regex": "cpp",
-        "span": "cpp"
+        "span": "cpp",
+        "strstream": "cpp"
     }
 }
