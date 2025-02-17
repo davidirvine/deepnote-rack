@@ -444,10 +444,10 @@ struct DeepnoteRackWidget : ModuleWidget
 		addChild(createWidget<ThemedScrew>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 		addChild(createWidget<ThemedScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-		addParam(createParamCentered<Trimpot>(mm2px(Vec(20.619, 27.1)), module, DeepnoteRack::DETUNE_TRIM_PARAM));
-		addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(41.937, 27.1)), module, DeepnoteRack::DETUNE_PARAM));
-		addParam(createParamCentered<Trimpot>(mm2px(Vec(20.619, 48.8)), module, DeepnoteRack::TARGET_TRIM_PARAM));
-		addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(41.937, 48.8)), module, DeepnoteRack::TARGET_PARAM));
+		addParam(createParamCentered<Trimpot>(mm2px(Vec(20.177, 33.641)), module, DeepnoteRack::TARGET_TRIM_PARAM));
+		addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(41.496, 33.641)), module, DeepnoteRack::TARGET_PARAM));
+		addParam(createParamCentered<Trimpot>(mm2px(Vec(20.177, 52.208)), module, DeepnoteRack::DETUNE_TRIM_PARAM));
+		addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(41.496, 52.208)), module, DeepnoteRack::DETUNE_PARAM));
 		addParam(createParamCentered<Trimpot>(mm2px(Vec(20.619, 70.721)), module, DeepnoteRack::RATE_TRIM_PARAM));
 		addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(41.937, 70.721)), module, DeepnoteRack::RATE_PARAM));
 		addParam(createParamCentered<Trimpot>(mm2px(Vec(14.436, 83.667)), module, DeepnoteRack::CP1_PARAM));
@@ -455,17 +455,17 @@ struct DeepnoteRackWidget : ModuleWidget
 
 		addParam(createLightParamCentered<VCVLightBezel<WhiteLight>>(mm2px(Vec(25.91, 94.501)), module, DeepnoteRack::RESET_PARAM, DeepnoteRack::RESET_LIGHT));
 
-		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(7.623, 27.1)), module, DeepnoteRack::DETUNE_INPUT));
-		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(7.623, 48.8)), module, DeepnoteRack::TARGET_INPUT));
-		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(7.623, 59.729)), module, DeepnoteRack::_1VOCT_INPUT));
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(7.181, 28.349)), module, DeepnoteRack::TARGET_INPUT));
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(7.181, 42.982)), module, DeepnoteRack::_1VOCT_INPUT));
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(7.181, 57.499)), module, DeepnoteRack::DETUNE_INPUT));
 		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(7.623, 70.721)), module, DeepnoteRack::RATE_INPUT));
-		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(10.269, 94.501)), module, DeepnoteRack::RESET_INPUT));
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(11.106, 94.501)), module, DeepnoteRack::RESET_INPUT));
 
 		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(11.106, 110.769)), module, DeepnoteRack::TRIGGER_OUTPUT));
 		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(40.715, 110.769)), module, DeepnoteRack::OUTPUT_OUTPUT));
 		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(25.91, 110.977)), module, DeepnoteRack::GATE_OUTPUT));
 
-		RootNoteDisplay<DeepnoteRack> *root_display = createWidget<RootNoteDisplay<DeepnoteRack>>(mm2px(Vec(20.0, 34.0)));
+		RootNoteDisplay<DeepnoteRack> *root_display = createWidget<RootNoteDisplay<DeepnoteRack>>(mm2px(Vec(20.0, 18.0)));
 		root_display->box.size = mm2px(Vec(12.00, 9.00));
 		root_display->module = module;
 		addChild(root_display);
