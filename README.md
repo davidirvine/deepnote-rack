@@ -4,7 +4,7 @@ A [deepnote](https://github.com/davidirvine/deepnote) voice packaged as a [VCV R
 
 ---
 <p align="center">
-    <img src="./assets/screenshot.png"/>
+    <img src="./assets/screenshot.png" height="400"/>
 <p>
 
 `DETUNE` sets the width of the frequency spread across all detuned sub voices. A CV input with attenuator trimpot can be used to modulate the DETUNE parameter.
