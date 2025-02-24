@@ -130,13 +130,9 @@ const int NUM_DUO_VOICES = 5;
 const int NUM_OSC_TRIO = 3;
 const int NUM_TRIO_VOICES = 4;
 
-using DuoVoiceType = deepnote::DeepnoteVoice<NUM_OSC_DUO>;
-std::array<DuoVoiceType, NUM_DUO_VOICES> duo_voices;
+const int NUM_VOICES = NUM_DUO_VOICES + NUM_TRIO_VOICES;
 
-using TrioVoiceType = deepnote::DeepnoteVoice<NUM_OSC_TRIO>;
-std::array<TrioVoiceType, NUM_TRIO_VOICES> trio_voices;
-
-const int FREQ_TABLE_WIDTH = NUM_TRIO_VOICES + NUM_DUO_VOICES;
+const int FREQ_TABLE_WIDTH = NUM_VOICES;
 const int FREQ_TABLE_HEIGHT = 13;
 
 // Generate a random frequency with in a range of frequencies
@@ -192,8 +188,7 @@ nt::OscillatorFrequency random_animation_freq()
 
 struct DeepnoteRack : Module
 {
-	std::array<TrioVoiceType, NUM_TRIO_VOICES> trio_voices;
-	std::array<DuoVoiceType, NUM_DUO_VOICES> duo_voices;
+	std::vector<deepnote::DeepnoteVoice> voices;
 	dsp::PulseGenerator trigger_pulse;
 	dsp::SchmittTrigger reset_schmitt;
 	nt::FrequencyTableIndex frequency_table_index{0};
@@ -259,23 +254,17 @@ struct DeepnoteRack : Module
 		configOutput(OUTPUT_OUTPUT, "Output");
 		configOutput(GATE_OUTPUT, "Gate");
 
-		auto voice_index{0};
 		const auto start_table_index{0};
-
-		for (auto &voice : trio_voices)
+		voices.resize(NUM_VOICES);
+		for (int voice_index = 0; voice_index < NUM_VOICES; voice_index++)
 		{
-			voice.init(
-				target_freq_table.get(nt::FrequencyTableIndex(start_table_index), nt::VoiceIndex(voice_index++)),
+			deepnote::init_voice(
+				voices[voice_index],
+				voice_index < NUM_TRIO_VOICES ? NUM_OSC_TRIO : NUM_OSC_DUO,
+				target_freq_table.get(nt::FrequencyTableIndex(start_table_index), nt::VoiceIndex(voice_index)),
 				nt::SampleRate(sample_rate),
-				random_animation_freq());
-		}
-
-		for (auto &voice : duo_voices)
-		{
-			voice.init(
-				target_freq_table.get(nt::FrequencyTableIndex(start_table_index), nt::VoiceIndex(voice_index++)),
-				nt::SampleRate(sample_rate),
-				random_animation_freq());
+				random_animation_freq()
+			);
 		}
 	}
 
@@ -285,8 +274,6 @@ struct DeepnoteRack : Module
 
 	void process(const ProcessArgs &args) override
 	{
-
-
 		const auto detune = nt::DetuneHz(get_value_from_input_combo(DETUNE_PARAM, DETUNE_INPUT, DETUNE_TRIM_PARAM));
 		const auto animation_multiplier = nt::AnimationMultiplier(get_value_from_input_combo(RATE_PARAM, RATE_INPUT, RATE_TRIM_PARAM));
 		const auto new_freq_table_index = inputs[_1VOCT_INPUT].isConnected() ? 
@@ -296,7 +283,7 @@ struct DeepnoteRack : Module
 		const deepnote::NoopTrace trace_functor;
 		// const RackTraceType trace_functor;
 		auto output{0.f};
-		auto index{0};
+		auto voice_index{0};
 		bool voice_in_flight{false};
 
 		// Handle reset button and trigger
@@ -308,24 +295,28 @@ struct DeepnoteRack : Module
 
 		if (outputs[OUTPUT_OUTPUT].isConnected())
 		{
-
-			for (auto &voice : trio_voices)
+			for (auto &voice : voices)
 			{
 				const auto is_at_target_pre = voice.is_at_target();
 
 				if (reset)
 				{
-					voice.set_start_frequency(target_freq_table.get(nt::FrequencyTableIndex(0), nt::VoiceIndex(index)));
+					voice.set_start_frequency(target_freq_table.get(nt::FrequencyTableIndex(0), nt::VoiceIndex(voice_index)));
 				}
-				output += process_voice(
+
+				voice.detune_oscillators(detune);
+				
+				if (index_changed)
+				{
+					voice.set_target_frequency(target_freq_table.get(frequency_table_index, nt::VoiceIndex(voice_index)));
+				}
+
+				output += deepnote::process_voice(
 					voice,
-					detune,
-					index_changed,
-					target_freq_table.get(frequency_table_index, nt::VoiceIndex(index)),
 					animation_multiplier,
 					cp1,
 					cp2,
-					trace_functor);
+					trace_functor).get();
 
 				if (!voice.is_at_target())
 				{
@@ -336,38 +327,7 @@ struct DeepnoteRack : Module
 				{
 					this->trigger_pulse.trigger(1e-3f);
 				}
-				index++;
-			}
-			for (auto &voice : duo_voices)
-			{
-				if (reset)
-				{
-					voice.set_start_frequency(target_freq_table.get(nt::FrequencyTableIndex(0), nt::VoiceIndex(index)));
-				}
-
-				const auto is_at_target_pre = voice.is_at_target();
-				output += process_voice(
-					voice,
-					detune,
-					index_changed,
-					target_freq_table.get(frequency_table_index, nt::VoiceIndex(index)),
-					animation_multiplier,
-					cp1,
-					cp2,
-					trace_functor);
-
-				//	Gate is high when all voices are at target: !voiceInFlight
-				if (!voice.is_at_target())
-				{
-					voice_in_flight = true;
-				}
-
-				//	the trigger fires when 1 or more voices arrive at target
-				if (voice.is_at_target() && !is_at_target_pre)
-				{
-					this->trigger_pulse.trigger(1e-3f);
-				}
-				index++;
+				voice_index++;
 			}
 
 			outputs[OUTPUT_OUTPUT].setVoltage(output * 5.f);
@@ -410,19 +370,6 @@ struct DeepnoteRack : Module
 		return nt::FrequencyTableIndex(target + (((target_voltage * target_trim) / 10.f) * 11));
 	}
 
-	template <typename VoiceType, typename TraceFunctor>
-	float process_voice(VoiceType &voice, const nt::DetuneHz &detune, const bool index_changed,
-						const nt::OscillatorFrequency &target_frequency, const nt::AnimationMultiplier &animation_multiplier,
-						const nt::ControlPoint1 &cp1, const nt::ControlPoint2 &cp2, const TraceFunctor &trace_functor) const
-	{
-		voice.set_detune(detune);
-		if (index_changed)
-		{
-			voice.set_target_frequency(target_frequency);
-		}
-		return voice.process(animation_multiplier, cp1, cp2, trace_functor);
-	}
-
 	std::string current_root_note() const
 	{
 		constexpr size_t NUM_NOTES = 12;
@@ -444,22 +391,24 @@ struct DeepnoteRackWidget : ModuleWidget
 		addChild(createWidget<ThemedScrew>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 		addChild(createWidget<ThemedScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-		addParam(createParamCentered<Trimpot>(mm2px(Vec(20.177, 33.641)), module, DeepnoteRack::TARGET_TRIM_PARAM));
-		addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(41.496, 33.641)), module, DeepnoteRack::TARGET_PARAM));
-		addParam(createParamCentered<Trimpot>(mm2px(Vec(20.177, 52.208)), module, DeepnoteRack::DETUNE_TRIM_PARAM));
-		addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(41.496, 52.208)), module, DeepnoteRack::DETUNE_PARAM));
-		addParam(createParamCentered<Trimpot>(mm2px(Vec(20.619, 70.721)), module, DeepnoteRack::RATE_TRIM_PARAM));
-		addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(41.937, 70.721)), module, DeepnoteRack::RATE_PARAM));
+		addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(41.496, 33.8)), module, DeepnoteRack::TARGET_PARAM));
+		addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(41.496, 52.0)), module, DeepnoteRack::DETUNE_PARAM));
+		addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(41.496, 70.95)), module, DeepnoteRack::RATE_PARAM));
+
+		addParam(createParamCentered<Trimpot>(mm2px(Vec(20.177, 34.0)), module, DeepnoteRack::TARGET_TRIM_PARAM));
+		addParam(createParamCentered<Trimpot>(mm2px(Vec(20.177, 52.13)), module, DeepnoteRack::DETUNE_TRIM_PARAM));
+		addParam(createParamCentered<Trimpot>(mm2px(Vec(20.177, 71.0)), module, DeepnoteRack::RATE_TRIM_PARAM));
+
 		addParam(createParamCentered<Trimpot>(mm2px(Vec(14.436, 83.667)), module, DeepnoteRack::CP1_PARAM));
 		addParam(createParamCentered<Trimpot>(mm2px(Vec(37.363, 83.667)), module, DeepnoteRack::CP2_PARAM));
 
 		addParam(createLightParamCentered<VCVLightBezel<WhiteLight>>(mm2px(Vec(25.91, 94.501)), module, DeepnoteRack::RESET_PARAM, DeepnoteRack::RESET_LIGHT));
 
-		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(7.181, 28.349)), module, DeepnoteRack::TARGET_INPUT));
-		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(7.181, 42.982)), module, DeepnoteRack::_1VOCT_INPUT));
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(7.181, 28.75)), module, DeepnoteRack::TARGET_INPUT));
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(7.181, 43.25)), module, DeepnoteRack::_1VOCT_INPUT));
 		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(7.181, 57.499)), module, DeepnoteRack::DETUNE_INPUT));
-		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(7.623, 70.721)), module, DeepnoteRack::RATE_INPUT));
-		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(11.106, 94.501)), module, DeepnoteRack::RESET_INPUT));
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(7.623, 71.0)), module, DeepnoteRack::RATE_INPUT));
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(11.106, 94.75)), module, DeepnoteRack::RESET_INPUT));
 
 		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(11.106, 110.769)), module, DeepnoteRack::TRIGGER_OUTPUT));
 		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(40.715, 110.769)), module, DeepnoteRack::OUTPUT_OUTPUT));

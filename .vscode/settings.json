@@ -67,6 +67,8 @@
         "forward_list": "cpp",
         "regex": "cpp",
         "span": "cpp",
-        "strstream": "cpp"
+        "strstream": "cpp",
+        "valarray": "cpp",
+        "*.ipp": "cpp"
     }
 }
